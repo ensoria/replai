@@ -1,83 +1,83 @@
-# replai — AI エージェント向け Go REPL 仕様書
+# replai - Go REPL Specification for AI Agents
 
-## 1. 概要
+## 1. Overview
 
-`replai` は、AI コーディングエージェント(Claude Code など)が Go プロジェクトのデバッグ・動作確認を行うための REPL である。Laravel の tinker に相当する役割を持つが、人間ではなく **LLM が読み書きすることに最適化** されている点が根本的に異なる。
+`replai` is a REPL for AI coding agents (such as Claude Code) to debug and verify behavior in Go projects. It plays a role similar to Laravel's tinker, but the core difference is that it is optimized for **LLM read/write workflows**, not human interaction.
 
-プロジェクト内の任意のパッケージをインポートし、関数の実行・構造体の確認・戻り値の検査を、テストファイルを書かずに即座に行えるようにする。
+It allows immediate import of any package in the project and quick execution of functions, struct inspection, and return-value checks without writing test files.
 
-### 設計原則
+### Design Principles
 
-1. **機械可読性が最優先** — すべての出力は構造化され、パースに曖昧さがないこと。装飾(ANSI カラー、罫線、プログレスバー)は一切出力しない。
-2. **決定性** — 同じ入力に対して同じ形式の出力を返す。出力順序・キー順序を固定する。
-3. **トークン効率** — LLM のコンテキストを浪費しない。冗長な挨拶文・バナー・プロンプト記号を出力しない。大きな値は明示的なマーカー付きで省略する。
-4. **自己記述性** — エラーや省略が発生した場合、「次に何をすれば解決するか」を出力自体が伝える。
-5. **非対話モードを第一級とする** — AI エージェントはインタラクティブな TTY よりも、ワンショット実行・stdin パイプを多用する。
+1. **Machine readability first** - All output must be structured and unambiguous to parse. No decorations (ANSI colors, box drawing, progress bars) should ever be printed.
+2. **Determinism** - The same input should always produce the same output format. Output order and key order must be fixed.
+3. **Token efficiency** - Do not waste LLM context. Do not emit verbose greetings, banners, or prompt markers. Large values must be abbreviated with explicit markers.
+4. **Self-descriptiveness** - When errors or truncation occur, the output itself should indicate what to do next.
+5. **Non-interactive mode as first-class** - AI agents rely on one-shot execution and stdin pipes more than interactive TTY sessions.
 
-## 2. 実行モード
+## 2. Execution Modes
 
-### 2.1 ワンショットモード(主要モード)
+### 2.1 One-Shot Mode (Primary Mode)
 
 ```sh
 replai eval 'user.NewService(nil).Validate("foo")'
-replai eval -f snippet.go        # ファイルから読む
-echo '...' | replai eval -      # stdin から読む
+replai eval -f snippet.go        # read from file
+echo '...' | replai eval -      # read from stdin
 ```
 
-- 1 回のコード評価を行い、結果を JSON で stdout に出力して終了する。
-- AI エージェントは Bash ツール経由で呼ぶため、このモードが最も使用頻度が高い想定。
+- Performs one code evaluation, prints the result as JSON to stdout, and exits.
+- This is expected to be the most frequently used mode because AI agents invoke it through shell tools.
 
-### 2.2 セッションモード
+### 2.2 Session Mode
 
 ```sh
-replai session start            # セッション ID を返す
-replai session eval <id> '...'  # 状態(変数・インポート)を引き継いで評価
-replai session vars <id>        # 定義済み変数の一覧
+replai session start            # returns a session ID
+replai session eval <id> '...'  # evaluates with preserved state (variables/imports)
+replai session vars <id>        # lists defined variables
 replai session end <id>
 ```
 
-- 変数定義やインポートをまたいだ連続的なデバッグを可能にする。
-- セッション状態はファイルに永続化し、別プロセスからの `eval` 呼び出しでも継続できること(AI エージェントの各 Bash 呼び出しは独立プロセスであるため)。
+- Enables continuous debugging across variable definitions and imports.
+- Session state must be persisted to files so it survives `eval` calls from separate processes (each AI shell invocation runs in an independent process).
 
-### 2.3 対話モード
+### 2.3 Interactive Mode
 
 ```sh
 replai repl
 ```
 
-- 人間によるフォールバック用。仕様上は提供するが、最適化の対象外。
+- Human fallback mode. Provided by specification, but not an optimization target.
 
-## 3. 入力仕様
+## 3. Input Specification
 
-### 3.1 受け付けるコード
+### 3.1 Accepted Code
 
-- Go の式(expression)— 値が出力対象になる
-- Go の文(statement)— `x := f()` などの変数定義はセッションに保持される
-- 複数行のコードブロック(関数定義・型定義を含む)
-- インポート宣言 — `import "github.com/ensoria/rest"` を書けば、モノレポ内の任意モジュール・外部依存をインポートできること
+- Go expressions - their values are output targets
+- Go statements - variable definitions such as `x := f()` are retained in the session
+- Multi-line code blocks (including function/type definitions)
+- Import declarations - writing `import "github.com/ensoria/rest"` must allow imports from any module in the monorepo and from external dependencies
 
-### 3.2 メタコマンド
+### 3.2 Meta Commands
 
-コード以外の操作は `:` プレフィックスのメタコマンドとする。
+Operations other than code execution use meta commands prefixed with `:`.
 
-| コマンド | 動作 |
+| Command | Behavior |
 |---|---|
-| `:type <expr>` | 式の型を評価せずに表示する |
-| `:doc <symbol>` | パッケージ・関数・型の doc コメントを表示する |
-| `:funcs <pkg>` | パッケージの公開関数・メソッドのシグネチャ一覧 |
-| `:fields <type>` | 構造体のフィールド一覧(型・タグを含む) |
-| `:vars` | セッション内の定義済み変数と型の一覧 |
-| `:imports` | 現在のインポート一覧 |
-| `:reset` | セッション状態の初期化 |
-| `:help` | メタコマンド一覧(機械可読な JSON で返す) |
+| `:type <expr>` | Shows the type of an expression without evaluating it |
+| `:doc <symbol>` | Shows doc comments for a package, function, or type |
+| `:funcs <pkg>` | Lists signatures of exported functions and methods in a package |
+| `:fields <type>` | Lists struct fields (including types and tags) |
+| `:vars` | Lists defined variables and types in the session |
+| `:imports` | Lists current imports |
+| `:reset` | Resets session state |
+| `:help` | Returns the list of meta commands in machine-readable JSON |
 
-`:funcs` / `:fields` / `:doc` は、AI がソースコードを読みに行かずに API 形状を確認するための機能であり、トークン節約の中核である。
+`:funcs` / `:fields` / `:doc` are core token-saving features that let AI inspect API shapes without reading source files directly.
 
-## 4. 出力仕様
+## 4. Output Specification
 
-### 4.1 出力エンベロープ
+### 4.1 Output Envelope
 
-すべての出力は **1 つの JSON オブジェクト** として stdout に書き出す。ストリーミングはしない(部分的な JSON はパース不能なため)。
+All output is written as **one JSON object** to stdout. No streaming is allowed (partial JSON is not parseable).
 
 ```json
 {
@@ -95,22 +95,22 @@ replai repl
 }
 ```
 
-| フィールド | 説明 |
+| Field | Description |
 |---|---|
-| `ok` | 評価が成功したか |
-| `value.repr` | Go 構文に近い表現(`%#v` 相当)。ポインタは指し先を展開する |
-| `value.type` | 完全修飾された型名 |
-| `value.json` | JSON 化可能な場合のみ。マーシャル不能なら省略 |
-| `stdout` / `stderr` | 評価中にコードが出力した内容(評価結果とは分離する) |
-| `defined` | この評価で新たに定義・更新された変数名 |
-| `duration_ms` | 実行時間 |
-| `truncated` | 出力の省略が発生したか |
+| `ok` | Whether evaluation succeeded |
+| `value.repr` | Go-like representation (equivalent to `%#v`); pointers are expanded to pointee values |
+| `value.type` | Fully qualified type name |
+| `value.json` | Included only when JSON-serializable; omitted if marshaling fails |
+| `stdout` / `stderr` | Output produced by evaluated code (separate from evaluation result) |
+| `defined` | Variable names newly defined or updated by this evaluation |
+| `duration_ms` | Execution time |
+| `truncated` | Whether output truncation occurred |
 
-複数の値(多値返却)の場合、`value` は配列 `values` になる。`error` 型の戻り値は専用フィールド `value.err` に分離し、`nil` か否かを明示する。
+For multiple return values, `value` becomes an array named `values`. Return values of type `error` are separated into a dedicated `value.err` field and must explicitly indicate whether they are `nil`.
 
-### 4.2 エラー出力
+### 4.2 Error Output
 
-エラー時も exit code は区別しつつ、**stdout に同じエンベロープ形式** で出力する(stderr にスタックトレースを生で吐かない)。
+Even on errors, with distinct exit codes, output must still use **the same envelope format on stdout** (do not print raw stack traces to stderr).
 
 ```json
 {
@@ -124,54 +124,54 @@ replai repl
 }
 ```
 
-- `kind` は `compile` | `runtime` | `panic` | `timeout` | `internal` のいずれか。
-- `panic` の場合はスタックトレースを `error.stack` に含めるが、replai 自身の内部フレームは除去し、ユーザーコードのフレームのみ残す。
-- `suggestion` には可能な限り修正候補を含める(未定義シンボルの類似名、不足インポートの候補など)。**エラーを読んだ AI が次の 1 手を打てる情報を返すことが、この REPL の最重要要件である。**
+- `kind` must be one of `compile` | `runtime` | `panic` | `timeout` | `internal`.
+- For `panic`, include stack trace in `error.stack`, but remove internal replai frames and keep only user-code frames.
+- `suggestion` should include actionable fixes whenever possible (similar undefined symbols, missing import candidates, and so on). **The highest-priority requirement of this REPL is to return enough information for AI to decide the next step.**
 
-#### exit code
+#### Exit Codes
 
-| code | 意味 |
+| Code | Meaning |
 |---|---|
-| 0 | 評価成功 |
-| 1 | コンパイルエラー / ランタイムエラー / panic(エンベロープに詳細あり) |
-| 2 | replai 自体の不正使用(フラグ誤りなど) |
-| 124 | タイムアウト |
+| 0 | Evaluation succeeded |
+| 1 | Compile error / runtime error / panic (details in envelope) |
+| 2 | Invalid replai usage (flag errors, etc.) |
+| 124 | Timeout |
 
-### 4.3 値の表示ルール
+### 4.3 Value Display Rules
 
-- **ポインタはアドレスではなく指し先を展開する**。`0xc000010230` のようなアドレス表示は AI にとって無意味。
-- ネストは既定で深さ 5 まで展開し、超えた部分は `"...(depth limit, use --depth=N)"` と省略理由と回避方法を埋め込む。
-- スライス・マップは既定で先頭 50 要素まで。省略時は `"...(+120 items, use --max-items=N)"` を末尾要素として埋め込む。
-- 長い文字列は既定 2,000 文字で切り、`"...(+8500 chars)"` を付与する。
-- `time.Time` は RFC 3339、`time.Duration` は `"30s"` のような可読表記と ns 値を併記する。
-- `[]byte` は UTF-8 として valid なら文字列表示、そうでなければ先頭を hex 表示する。
-- 循環参照は `"<cycle: *user.Node>"` として打ち切る。
-- 出力全体の上限は既定 16KB(`--max-output` で変更可)。超過時は `truncated: true` とし、何が削られたかを `truncated_fields` に列挙する。
+- **Pointers must display pointee values, not addresses**. Address strings like `0xc000010230` are meaningless for AI.
+- Expand nesting up to depth 5 by default; beyond that, embed an omission marker such as `"...(depth limit, use --depth=N)"` including both reason and how to override.
+- Slices/maps show up to the first 50 items by default. On omission, append a tail marker such as `"...(+120 items, use --max-items=N)"`.
+- Long strings are cut at 2,000 characters by default and suffixed with `"...(+8500 chars)"`.
+- `time.Time` should use RFC 3339; `time.Duration` should include both human-readable form like `"30s"` and nanoseconds.
+- `[]byte` should be shown as string if valid UTF-8; otherwise show leading bytes in hex.
+- Circular references should be terminated as `"<cycle: *user.Node>"`.
+- Total output size limit is 16 KB by default (override with `--max-output`). When exceeded, set `truncated: true` and enumerate omitted parts in `truncated_fields`.
 
-省略はすべて **「省略が起きたこと」と「全体を見る方法」を出力内に明示する**。サイレントな切り捨ては禁止。
+For all omissions, output must explicitly state both that omission occurred and how to retrieve the full result. Silent truncation is forbidden.
 
-## 5. プロジェクト統合
+## 5. Project Integration
 
-- カレントディレクトリから `go.mod` / `go.work` を検出し、そのモジュール(およびワークスペース内モジュール)のパッケージを追加設定なしでインポート可能にする。
-- 依存パッケージはプロジェクトの `go.mod` に記載されたバージョンを使う。
-- 未インポートのパッケージ参照は、goimports 相当の解決で自動インポートを試みる。解決した場合は `auto_imports` フィールドで報告する。
-- internal パッケージもインポート可能とする(デバッグ用途のため。モジュール境界の internal 制約は緩和する)。
+- Detect `go.mod` / `go.work` from the current directory and allow importing packages in that module (and workspace modules) with no extra configuration.
+- Dependency packages must use versions specified in the project's `go.mod`.
+- For references to packages not yet imported, attempt auto-import resolution equivalent to goimports. If resolved, report it in the `auto_imports` field.
+- Internal packages must also be importable (for debugging use; relax module-boundary internal restrictions).
 
-## 6. 安全性・リソース制御
+## 6. Safety and Resource Control
 
-- 評価には既定 30 秒のタイムアウトを設ける(`--timeout` で変更可)。無限ループで AI エージェントのターンが固まることを防ぐ。
-- メモリ上限を設定可能とする(既定 512MB)。
-- ファイル書き込み・ネットワーク・`os/exec` は **既定で許可** する(DB 接続確認などデバッグの主目的のため)。ただし `--restrict` フラグで無効化できること。
-- 評価したコードとその結果はセッションログ(JSONL)に記録し、`replai session log <id>` で再生できること。AI が「さっき何を試したか」を振り返るために使う。
+- Evaluations must have a default timeout of 30 seconds (overridable by `--timeout`) to avoid hanging an AI agent turn on infinite loops.
+- Memory limits must be configurable (default 512 MB).
+- File writes, network access, and `os/exec` are **allowed by default** (core for debugging tasks such as DB connection checks), but can be disabled with `--restrict`.
+- Evaluated code and results must be recorded in a session log (JSONL), replayable via `replai session log <id>`, so AI can review what it tried earlier.
 
-## 7. 非機能要件
+## 7. Non-Functional Requirements
 
-- ワンショット評価の起動オーバーヘッドは 1 秒未満を目標とする(コンパイルキャッシュの活用)。
-- 出力 JSON のキー順序は本仕様書の記載順に固定する。
-- すべてのフラグ・サブコマンドは `replai --help` で JSON としても取得できる(`--help --json`)。AI が利用方法を自己発見できるようにするため。
+- Target startup overhead for one-shot evaluation: under 1 second (using compile cache).
+- JSON key order in output must be fixed to the order defined in this specification.
+- All flags and subcommands must be discoverable from `replai --help`, and also available as JSON (`--help --json`), so AI can self-discover usage.
 
-## 8. 非対象(Non-goals)
+## 8. Non-Goals
 
-- シンタックスハイライト、補完、履歴検索などの人間向け UX
-- Go 以外の言語のサポート
-- リモート実行・サンドボックス分離(ローカル開発専用ツールとする)
+- Human-oriented UX features such as syntax highlighting, completion, and history search
+- Support for languages other than Go
+- Remote execution or sandbox isolation (this is a local-development tool)
