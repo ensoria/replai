@@ -113,6 +113,7 @@ func (e *Engine) Eval(st *session.State, input string) *Outcome {
 
 func (e *Engine) runMeta(st *session.State, command string) *Outcome {
 	out, exit := meta.Run(e.Project, st, command)
+	out = envelope.MarshalRaw(out, e.Opts.MaxOutput)
 	return &Outcome{Output: out, ExitCode: exit}
 }
 

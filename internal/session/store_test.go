@@ -68,6 +68,22 @@ var _ = Describe("Store", func() {
 		Expect(records).To(HaveLen(2))
 	})
 
+	It("saves state and appends a log record under one lock", func() {
+		st, err := store.Create("/proj")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(store.WithLockAndLog(st.ID, func(s *session.State) (*session.LogRecord, error) {
+			s.Entries = append(s.Entries, &session.Entry{Kind: "stmt", Source: "z := 3"})
+			return &session.LogRecord{Time: time.Now().UTC(), Input: "z := 3", Output: json.RawMessage(`{"ok":true}`)}, nil
+		})).To(Succeed())
+
+		loaded, err := store.Load(st.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(loaded.Entries).To(HaveLen(1))
+		records, err := store.ReadLog(st.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(records).To(HaveLen(1))
+	})
+
 	It("deletes session files", func() {
 		st, err := store.Create("/proj")
 		Expect(err).NotTo(HaveOccurred())

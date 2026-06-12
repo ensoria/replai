@@ -65,13 +65,12 @@ func init() {
 	pf.BoolVar(&flagRestrict, "restrict", false, "reject snippets importing os, os/exec, net, syscall (static check)")
 	pf.BoolVar(&flagJSON, "json", false, "with --help: print command help as JSON")
 
-	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(c *cobra.Command, args []string) {
 		if flagJSON {
 			printHelpJSON(c)
 			return
 		}
-		defaultHelp(c, args)
+		printHelpJSON(c)
 	})
 
 	rootCmd.AddCommand(evalCmd, sessionCmd, replCmd, versionCmd)

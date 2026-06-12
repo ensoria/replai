@@ -311,6 +311,9 @@ func classifyStmts(src string, imports []*Import, sessionVars map[string]bool) (
 		Imports: imports,
 		Defined: defined,
 	}
+	if len(fn.Body.List) == 0 {
+		return nil, &Error{Line: 1, Column: 1, Msg: "empty input"}
+	}
 
 	// REPL semantics: a trailing expression statement is split off so its
 	// value becomes the evaluation result instead of a compile error.

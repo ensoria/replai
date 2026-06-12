@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -41,5 +44,17 @@ var _ = Describe("describeCommand (helpjson.go)", func() {
 			Expect(sub.Name).NotTo(Equal("help"))
 			Expect(sub.Name).NotTo(Equal("completion"))
 		}
+	})
+
+	It("prints JSON for the default help path", func() {
+		var buf bytes.Buffer
+		oldOut := rootCmd.OutOrStdout()
+		rootCmd.SetOut(&buf)
+		defer rootCmd.SetOut(oldOut)
+
+		rootCmd.HelpFunc()(rootCmd, nil)
+		var decoded map[string]any
+		Expect(json.Unmarshal(buf.Bytes(), &decoded)).To(Succeed())
+		Expect(decoded["ok"]).To(Equal(true))
 	})
 })

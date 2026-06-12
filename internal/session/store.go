@@ -99,6 +99,34 @@ func (s *Store) Delete(id string) error {
 // (possibly mutated) state. Concurrent evals against the same session from
 // parallel agent processes serialize here.
 func (s *Store) WithLock(id string, fn func(st *State) error) error {
+	return s.withLock(id, func(st *State) error {
+		if err := fn(st); err != nil {
+			return err
+		}
+		return s.Save(st)
+	})
+}
+
+// WithLockAndLog loads the session under an exclusive flock, runs fn, saves
+// the mutated state, then appends the returned log record before releasing the
+// lock. This keeps session logs in the same order as serialized evals.
+func (s *Store) WithLockAndLog(id string, fn func(st *State) (*LogRecord, error)) error {
+	return s.withLock(id, func(st *State) error {
+		rec, err := fn(st)
+		if err != nil {
+			return err
+		}
+		if err := s.Save(st); err != nil {
+			return err
+		}
+		if rec == nil {
+			return nil
+		}
+		return s.appendLog(id, rec)
+	})
+}
+
+func (s *Store) withLock(id string, fn func(st *State) error) error {
 	lock, err := os.OpenFile(s.lockPath(id), os.O_CREATE|os.O_RDWR, filePerm)
 	if err != nil {
 		return err
@@ -116,7 +144,7 @@ func (s *Store) WithLock(id string, fn func(st *State) error) error {
 	if err := fn(st); err != nil {
 		return err
 	}
-	return s.Save(st)
+	return nil
 }
 
 // LogRecord is one line of the session JSONL log.
@@ -128,6 +156,10 @@ type LogRecord struct {
 
 // AppendLog appends one record to the session log.
 func (s *Store) AppendLog(id string, rec *LogRecord) error {
+	return s.appendLog(id, rec)
+}
+
+func (s *Store) appendLog(id string, rec *LogRecord) error {
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return err

@@ -90,5 +90,27 @@ var _ = Describe("Envelope", func() {
 			fields := m["truncated_fields"].([]any)
 			Expect(fields).To(Equal([]any{"stdout", "stderr", "value.repr"}))
 		})
+
+		It("trims long error messages and suggestions", func() {
+			env := envelope.NewError(envelope.KindCompile, "undefined: "+strings.Repeat("a", 2000))
+			env.Error.Suggestion = strings.Repeat("b", 2000)
+			data := env.Marshal(1000)
+			Expect(len(data)).To(BeNumerically("<=", 1000))
+			var m map[string]any
+			Expect(json.Unmarshal(data, &m)).To(Succeed())
+			Expect(m["truncated"]).To(BeTrue())
+			Expect(m["truncated_fields"]).To(ContainElement("error.message"))
+			Expect(m["truncated_fields"]).To(ContainElement("error.suggestion"))
+		})
+
+		It("replaces oversized raw meta output with a truncation envelope", func() {
+			data := envelope.MarshalRaw([]byte(`{"ok":true,"doc":"`+strings.Repeat("x", 5000)+`"}`), 1000)
+			Expect(len(data)).To(BeNumerically("<=", 1000))
+			var m map[string]any
+			Expect(json.Unmarshal(data, &m)).To(Succeed())
+			Expect(m["ok"]).To(BeFalse())
+			Expect(m["truncated"]).To(BeTrue())
+			Expect(m["truncated_fields"]).To(ContainElement("meta"))
+		})
 	})
 })

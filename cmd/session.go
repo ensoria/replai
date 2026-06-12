@@ -60,19 +60,18 @@ var sessionEvalCmd = &cobra.Command{
 		store := sessionStore(p)
 		id := args[0]
 		var out *engine.Outcome
-		err = store.WithLock(id, func(st *session.State) error {
+		err = store.WithLockAndLog(id, func(st *session.State) (*session.LogRecord, error) {
 			out = eng.Eval(st, input)
-			return nil
+			return &session.LogRecord{
+				Time:   time.Now().UTC(),
+				Input:  input,
+				Output: json.RawMessage(out.Output),
+			}, nil
 		})
 		if err != nil {
 			failUsage(err.Error(), "")
 			return
 		}
-		_ = store.AppendLog(id, &session.LogRecord{
-			Time:   time.Now().UTC(),
-			Input:  input,
-			Output: json.RawMessage(out.Output),
-		})
 		printOutcome(out)
 	},
 }

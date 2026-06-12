@@ -166,6 +166,12 @@ var _ = Describe("Classify", func() {
 			Expect(err).To(HaveOccurred())
 		})
 
+		It("rejects comment-only input without panicking", func() {
+			_, err := parse.Classify("// just a comment", sessionVars)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("empty input")))
+		})
+
 		It("reports a position for a syntax error", func() {
 			_, err := parse.Classify("x := = 1", sessionVars)
 			Expect(err).To(HaveOccurred())

@@ -24,7 +24,11 @@ const (
 	fieldStdout    = "stdout"
 	fieldStderr    = "stderr"
 	fieldValueRepr = "value.repr"
+	fieldErrorMsg  = "error.message"
+	fieldErrorSug  = "error.suggestion"
 	fieldStack     = "error.stack"
+	fieldMeta      = "meta"
+	fieldEnvelope  = "envelope"
 
 	truncMarker = "...(+%d chars, truncated by --max-output)"
 )
@@ -105,6 +109,8 @@ func (e *Envelope) Marshal(maxOutput int) []byte {
 		func(e *Envelope) bool { return trimStdout(e, keep) },
 		func(e *Envelope) bool { return trimStderr(e, keep) },
 		func(e *Envelope) bool { return trimRepr(e, keep) },
+		func(e *Envelope) bool { return trimErrorMessage(e, keep) },
+		func(e *Envelope) bool { return trimErrorSuggestion(e, keep) },
 		trimStack,
 	}
 	for _, step := range steps {
@@ -117,7 +123,31 @@ func (e *Envelope) Marshal(maxOutput int) []byte {
 			return data
 		}
 	}
+	fallback := NewError(KindInternal, "output exceeded --max-output after trimming")
+	fallback.Truncated = true
+	fallback.TruncatedFields = append(append([]string{}, e.TruncatedFields...), fieldEnvelope)
+	data, err = json.Marshal(fallback)
+	if err == nil && (maxOutput <= 0 || len(data) <= maxOutput) {
+		return data
+	}
+	fallback.Error.Message = "output exceeded --max-output"
+	fallback.TruncatedFields = []string{fieldEnvelope}
+	data, _ = json.Marshal(fallback)
 	return data
+}
+
+// MarshalRaw renders non-envelope command output under the same output budget.
+// Oversized raw outputs are replaced by a compact truncation envelope instead
+// of silently ignoring --max-output.
+func MarshalRaw(data []byte, maxOutput int) []byte {
+	if maxOutput <= 0 || len(data) <= maxOutput {
+		return data
+	}
+	env := NewError(KindInternal, "meta output exceeded --max-output")
+	env.Error.Suggestion = "raise --max-output to retrieve the full meta output"
+	env.Truncated = true
+	env.TruncatedFields = []string{fieldMeta}
+	return env.Marshal(maxOutput)
 }
 
 func (e *Envelope) allValues() []*evalrt.ReplaiValue {
@@ -186,6 +216,30 @@ func trimRepr(e *Envelope, keep int) bool {
 	}
 	if changed {
 		e.markTruncated(fieldValueRepr)
+	}
+	return changed
+}
+
+func trimErrorMessage(e *Envelope, keep int) bool {
+	if e.Error == nil {
+		return false
+	}
+	msg, changed := cutString(e.Error.Message, keep)
+	if changed {
+		e.Error.Message = msg
+		e.markTruncated(fieldErrorMsg)
+	}
+	return changed
+}
+
+func trimErrorSuggestion(e *Envelope, keep int) bool {
+	if e.Error == nil {
+		return false
+	}
+	suggestion, changed := cutString(e.Error.Suggestion, keep)
+	if changed {
+		e.Error.Suggestion = suggestion
+		e.markTruncated(fieldErrorSug)
 	}
 	return changed
 }

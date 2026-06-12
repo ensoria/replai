@@ -1,8 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/ensoria/replai/internal/engine"
+	"github.com/ensoria/replai/internal/envelope"
 )
 
 // helpCommand is the JSON shape of `--help --json`, letting AI agents
@@ -29,7 +35,13 @@ type helpOut struct {
 }
 
 func printHelpJSON(c *cobra.Command) {
-	printJSON(&helpOut{OK: true, Command: describeCommand(c)})
+	data, err := json.Marshal(&helpOut{OK: true, Command: describeCommand(c)})
+	if err != nil {
+		printEnvelope(envelope.NewError(envelope.KindInternal, err.Error()))
+		exitCode = engine.ExitUsage
+		return
+	}
+	fmt.Fprintln(c.OutOrStdout(), string(data))
 }
 
 func describeCommand(c *cobra.Command) *helpCommand {
