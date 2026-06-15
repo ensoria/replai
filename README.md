@@ -21,7 +21,6 @@ replai operates on the project found from the working directory (walks up to the
 | `replai session vars <id>` | List session variables |
 | `replai session log <id>` | Replay the evaluation history (recall what was tried before) |
 | `replai session end <id>` | Delete a session |
-| `replai repl` | Interactive mode (human fallback) |
 | `replai --help --json` | Machine-readable self-description of all commands and flags |
 
 ## Accepted input

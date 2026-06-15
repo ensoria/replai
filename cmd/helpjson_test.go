@@ -17,7 +17,7 @@ var _ = Describe("describeCommand (helpjson.go)", func() {
 		for _, sub := range root.Subcommands {
 			names = append(names, sub.Name)
 		}
-		Expect(names).To(ContainElements("eval", "session", "repl", "version"))
+		Expect(names).To(ContainElements("eval", "session", "version"))
 
 		var flagNames []string
 		for _, f := range root.Flags {

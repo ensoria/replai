@@ -73,7 +73,7 @@ func init() {
 		printHelpJSON(c)
 	})
 
-	rootCmd.AddCommand(evalCmd, sessionCmd, replCmd, versionCmd)
+	rootCmd.AddCommand(evalCmd, sessionCmd, versionCmd)
 }
 
 func engineOptions() *engine.Options {

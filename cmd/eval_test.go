@@ -44,24 +44,3 @@ var _ = Describe("resolveInput (eval.go)", func() {
 		Expect(exitCode).To(Equal(engine.ExitUsage))
 	})
 })
-
-var _ = Describe("balanced (repl.go)", func() {
-	It("treats complete lines as balanced", func() {
-		Expect(balanced("x := 1")).To(BeTrue())
-		Expect(balanced(`fmt.Println("}")`)).To(BeTrue())
-	})
-
-	It("waits for closing braces", func() {
-		Expect(balanced("func f() {")).To(BeFalse())
-		Expect(balanced("func f() {\n}")).To(BeTrue())
-	})
-
-	It("waits inside raw string literals", func() {
-		Expect(balanced("s := `multi")).To(BeFalse())
-		Expect(balanced("s := `multi\nline`")).To(BeTrue())
-	})
-
-	It("ignores brackets in line comments", func() {
-		Expect(balanced("x := 1 // {")).To(BeTrue())
-	})
-})
