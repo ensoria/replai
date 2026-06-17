@@ -10,6 +10,8 @@ This document is written for LLM consumption. Every command prints **exactly one
 
 replai operates on the project found from the working directory (walks up to the nearest go.mod). **Run it inside the project directory.**
 
+**One-shot vs session:** prefer a single `eval` (optionally with several statements) for anything that performs side effects — sessions re-execute their whole history on every eval (see [Critical session constraint](#critical-session-constraint-re-execution-semantics)). Reach for a session only to inspect pure / read-only state across several steps.
+
 ## Commands
 
 | Command | Purpose |
@@ -39,7 +41,10 @@ References to packages that are not imported are resolved automatically (goimpor
 replai eval 'widget.New("demo")'   # widget resolves without an import
 ```
 
-Auto-import succeeds only when the referenced symbol actually exists. A misspelled symbol produces `undefined: widget`; in that case check the correct name with `:funcs <import-path>` or add an explicit import.
+Auto-import is **symbol-aware**: the package is added only when the **referenced symbol actually exists**. So a typo in the symbol prevents the package from being imported at all, and you get the weak `undefined: widget` — **not** a "did you mean `New`?" suggestion. Implications for an unfamiliar API:
+
+- In **one-shot** `eval`, a misspelled symbol degrades to `undefined: widget`. To get precise symbol-level help, inspect the API first with `:funcs <import-path>` (or `:doc <pkg>`), or add an explicit import.
+- The strong "did you mean `widget.New`?" suggestion only appears once the package is **already resolved** — i.e. **inside a session** after a prior successful use of the package, or when you add an explicit import (then a misspelling becomes `undefined: widget.Nwe`, which carries the suggestion).
 
 ## Output format (the envelope)
 
@@ -86,6 +91,8 @@ Errors use the same envelope format on stdout. `suggestion` tells you the next s
 {"ok":false,"error":{"kind":"compile","message":"undefined: widget.Nwe","position":{"line":1,"column":8},"suggestion":"did you mean widget.New? (similar symbols: New); use `:funcs example.com/fixture/pkg/widget` to list the package API"},"stdout":"","stderr":"","defined":[],"duration_ms":0,"truncated":false}
 ```
 
+This symbol-level suggestion assumes the `widget` package is **already resolved** (a session that previously used it, or an explicit import). A one-shot eval of a misspelled symbol cannot auto-import the package, so it yields the weaker `undefined: widget` instead — see [Auto-import](#auto-import).
+
 ## Meta commands (inspect without executing)
 
 Pass as the argument of `eval` / `session eval`, starting with `:`. **Try these before reading source files** (saves tokens).
@@ -107,7 +114,8 @@ Pass as the argument of `eval` / `session eval`, starting with `:`. **Try these 
 Each session eval **re-executes every prior entry** before running the new snippet (only the new snippet's output is shown). Consequences:
 
 - Side effects of past entries (DB writes, HTTP calls, file creation) are **repeated on every eval**
-- For sequences of side-effecting operations, putting multiple statements into a single `eval` is safer than a session
+- **Rule:** do **not** drive a sequence of side-effecting steps (DB writes, HTTP POST/PUT, file creation, message publishing) through a session — each new eval replays all earlier writes. Put the whole sequence into one `eval` (multiple statements are allowed) instead.
+- Use a session only to inspect **pure / idempotent / read-only** state, or when replaying the earlier steps is known to be cheap and harmless.
 - If a past entry no longer compiles (e.g. a type was redefined), `error.message` says `in session entry N`; recover with `:reset`
 
 ## Flags (shared by all commands)
@@ -129,7 +137,7 @@ Every omission or truncation is explicitly marked. Silent truncation never happe
 - **Side effects repeat due to re-execution** (above). This is replai's biggest caveat
 - When the last element of a multi-value result is an untyped nil, it is assumed to be a nil `error` (heuristic based on Go's `(T, error)` convention)
 - Nested internal packages like `pkg/x/internal/y` cannot be imported (module-root `internal/` works)
-- `--restrict` is a static import check only; it does not detect network access performed inside imported packages
+- `--restrict` is a **static import-path check only — not a security sandbox.** It rejects direct imports of `os`, `os/exec`, `net`, `syscall`, but does **not** stop network, file, or `exec` access performed transitively inside imported packages (nor reflection / `go:linkname` tricks). replai is a local tool for **trusted codebases**: remote execution and sandbox isolation are explicit non-goals. **Do not rely on `--restrict` to run untrusted code.**
 - The first eval may take a few seconds while project dependencies compile; subsequent evals run in under a second thanks to the build cache
 - Evaluated code can write files, use the network, and spawn subprocesses by default (this is a debugging tool); effects may reach outside the generated `.replai/` directory (which is self-gitignored)
 - Session files live in `<project>/.replai/sessions/`; concurrent evals are serialized with flock
