@@ -6,6 +6,10 @@ Additionally, use pointer types for struct fields whenever possible.
 The main reason is to maintain consistency so that client code always handles structs through pointers.
 Efficiency gained from pointer usage is the second reason. If working with pointers makes the code harder to use or read, feel free to use value types instead.
 
+Basically, structs should be handled using pointers, but there are exceptions.
+If there are established conventions or good practices in Go that specify whether to use values or pointers, prioritize following those conventions/good practices.
+For example, `sync.RWMutex` is almost never stored as a pointer in a struct field.
+
 In all other cases, use value types only when the drawbacks of using pointers outweigh the benefits.
 
 Please treat primitive values as value types by default.
